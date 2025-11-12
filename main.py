@@ -1,8 +1,13 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
 
-app = FastAPI()
+from database import create_document, get_documents
+from schemas import Contactmessage
+
+app = FastAPI(title="Agency API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,11 +19,40 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello from FastAPI Backend!"}
+    return {"message": "Agency API is running"}
 
-@app.get("/api/hello")
-def hello():
-    return {"message": "Hello from the backend API!"}
+# Public endpoint to submit a contact message
+class ContactIn(BaseModel):
+    name: str
+    email: str
+    company: Optional[str] = None
+    message: str
+    budget: Optional[str] = None
+    service: Optional[str] = None
+
+@app.post("/api/contact")
+async def submit_contact(payload: ContactIn):
+    try:
+        # Validate via schema and persist
+        data = Contactmessage(**payload.model_dump())
+        inserted_id = create_document("contactmessage", data)
+        return {"success": True, "id": inserted_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Admin/listing endpoint (basic)
+@app.get("/api/contact", response_model=List[dict])
+async def list_contacts(limit: int = 50):
+    try:
+        docs = get_documents("contactmessage", limit=limit)
+        # Convert ObjectId to string if present
+        cleaned = []
+        for d in docs:
+            d = {k: (str(v) if k == "_id" else v) for k, v in d.items()}
+            cleaned.append(d)
+        return cleaned
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/test")
 def test_database():
